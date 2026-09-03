@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'auth_utils.dart';
 import '../models/play_list_item.dart';
@@ -84,32 +85,61 @@ class ApiClient {
     return resp.data;
   }
 
+  // ====== 文件级调试日志（adb 联调用；发布稳定后可置 _kDebugApiLog=false 关闭）======
+  static const bool _kDebugApiLog = true;
+  void _apiDebug(String msg) {
+    if (!_kDebugApiLog) return;
+    // release 构建也保证进 logcat（tag 通常为 flutter）
+    print('FNTV_API $msg');
+    // 文件日志 best-effort（debug 构建可读）
+    try {
+      const dir = '/sdcard/Android/data/com.fntv.byd/cache';
+      Directory(dir).createSync(recursive: true);
+      File('$dir/fntv_api.log').writeAsStringSync(
+        '${DateTime.now().toIso8601String()} $msg\n',
+        mode: FileMode.append,
+      );
+    } catch (_) {}
+  }
+
   /// 浏览媒体库/文件夹内的所有条目（自动翻页取满 total）。
   ///
-  /// FnOS 嵌套文件夹 guid 以 `fv_` 开头，必须用 `parent_guid` 才能列出子项；
-  /// 顶层媒体库源 guid 用 `ancestor_guid`。两者任一返回空列表时，自动回退尝试
-  /// 另一种 guid 形态（参照 Java 原项目 fnos_tv_danmu v1.2.9 修复「暂无内容」）。
+  /// 严格对齐 Java 原项目 fnos_tv_danmu v1.2.9 的 browseItemsInContainer：
+  /// - FnOS 嵌套文件夹 guid 以 `fv_` 开头，必须用 `parent_guid` 列出子项；
+  ///   顶层媒体库源 guid 用 `ancestor_guid`。
+  /// - 两类请求均使用 9 类 type 标签（BROWSE_TYPES），否则 Episode / Season / Collection
+  ///   等子项会被过滤成空列表 → 界面「暂无内容」。此前移植把 ancestor 分支错写成 4 类型，
+  ///   正是 L 林栋 等 Episode 子项文件夹恒空的根因。
+  /// - 首轮空列表时回退尝试另一种 guid 形态，回退轮 exclude_grouped_video 统一为 0。
+  static const List<String> _browseTypes = <String>[
+    'Movie', 'TV', 'Directory', 'Video', 'Episode', 'Season', 'Collection', 'Folder', 'folder',
+  ];
+
   Future<List<PlayListItem>> fetchItemsInContainer(String guid, {bool? forceParent}) async {
     final useParentFirst = forceParent ?? guid.startsWith('fv_');
-    final first = await _fetchItemPageBatch(guid, useParentFirst);
-    if (first.isNotEmpty) return first;
-    // 首轮空列表：回退尝试另一种 guid 形态（fv_ 文件夹试 ancestor_guid，媒体库源试 parent_guid）
-    final alt = await _fetchItemPageBatch(guid, !useParentFirst);
+    _apiDebug('fetchItemsInContainer guid=$guid useParentFirst=$useParentFirst');
+    // 第一轮：fv_ → parent_guid(exclude=0)；非 fv_ → ancestor_guid(exclude=1)
+    final first = await _fetchItemPageBatch(guid, useParentFirst, excludeGrouped: !useParentFirst);
+    if (first.isNotEmpty) {
+      _apiDebug('fetchItemsInContainer 第一轮命中 ${first.length} 项');
+      return first;
+    }
+    // 回退：尝试另一种 guid 形态，exclude_grouped_video 统一为 0（对齐 Java 回退分支）
+    _apiDebug('fetchItemsInContainer 第一轮空，回退另一种 guid 形态');
+    final alt = await _fetchItemPageBatch(guid, !useParentFirst, excludeGrouped: false);
+    _apiDebug('fetchItemsInContainer 回退结果 ${alt.length} 项');
     return alt;
   }
 
-  Future<List<PlayListItem>> _fetchItemPageBatch(String guid, bool useParent) async {
+  Future<List<PlayListItem>> _fetchItemPageBatch(String guid, bool useParent,
+      {required bool excludeGrouped}) async {
     final all = <PlayListItem>[];
     int page = 1;
     const pageSize = 200;
     while (true) {
       final body = <String, dynamic>{
-        'tags': {
-          'type': useParent
-              ? ['Movie', 'TV', 'Directory', 'Video', 'Episode', 'Season', 'Collection', 'Folder', 'folder']
-              : ['Movie', 'TV', 'Directory', 'Video'],
-        },
-        'exclude_grouped_video': useParent ? 0 : 1,
+        'tags': {'type': _browseTypes},
+        'exclude_grouped_video': excludeGrouped ? 1 : 0,
         'sort_type': useParent ? 'ASC' : 'DESC',
         'sort_column': useParent ? 'sort_title' : 'create_time',
         'page': page,
@@ -120,11 +150,15 @@ class ApiClient {
       } else {
         body['ancestor_guid'] = guid;
       }
+      _apiDebug('REQ useParent=$useParent exclude=$excludeGrouped guid=$guid body=$body');
       final resp = await getItemList(body);
+      _apiDebug('RESP code=${resp['code']} dataNull=${resp['data'] == null}');
       if (resp['code'] != 0 || resp['data'] == null || resp['data']['list'] == null) break;
       final list = (resp['data']['list'] as List)
           .map((e) => PlayListItem.fromJson(e))
           .toList();
+      final types = list.take(8).map((e) => '${e.type}:${e.title}').join(', ');
+      _apiDebug('RESP list=${list.length} total=${resp['data']['total']} sample=[$types]');
       all.addAll(list);
       final total = (resp['data']['total'] ?? 0).toInt();
       if (list.isEmpty || all.length >= total) break;
