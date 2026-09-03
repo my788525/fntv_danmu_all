@@ -9,7 +9,10 @@ def keystorePropertiesFile = rootProject.file('key.properties')
 def hasKeystore = keystorePropertiesFile.exists()
 
 android {
-    namespace = "com.fntv.byd"
+    // 注意：namespace 必须与 Kotlin 源码实际包名目录一致（源码在 com/fntv/fnos_tv_all/），
+    // 否则 Manifest 的 .MainActivity 解析到错误类，运行时抛 ClassNotFoundException 白屏。
+    // 设备上的应用身份（applicationId）仍为 com.fntv.byd，不影响 BYD 专版识别与自更新。
+    namespace = "com.fntv.fnos_tv_all"
     compileSdk = flutter.compileSdkVersion
 
     compileOptions {
