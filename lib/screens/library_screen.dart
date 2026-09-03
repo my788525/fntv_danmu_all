@@ -47,34 +47,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _fetchItems(String guid, String title) async {
     setState(() { _loading = true; _browseGuid = guid; _browseTitle = title; });
     try {
-      // 分页累加：fnOS 单个媒体库影片数可能达数百，必须翻页取满 total，
-      // 否则仅显示首屏 50 条（旧 page_size=50 未翻页导致「电影180+只显示50部」）。
-      final all = <PlayListItem>[];
-      int page = 1;
-      const pageSize = 200;
-      while (true) {
-        final resp = await _app.api.getItemList({
-          'ancestor_guid': guid,
-          'tags': {'type': ['Movie', 'TV', 'Directory', 'Video']},
-          'exclude_grouped_video': 1,
-          'sort_type': 'DESC',
-          'sort_column': 'create_time',
-          'page': page,
-          'page_size': pageSize,
-        });
-        if (resp['code'] != 0 || resp['data'] == null || resp['data']['list'] == null) break;
-        final list = (resp['data']['list'] as List)
-            .map((e) => PlayListItem.fromJson(e))
-            .toList();
-        all.addAll(list);
-        final total = (resp['data']['total'] ?? 0).toInt();
-        // 取空、或已取满、或已超出 total 则停止翻页
-        if (list.isEmpty || all.length >= total) break;
-        page++;
-      }
-      _browseItems = all;
+      // 文件夹感知浏览：fv_ 嵌套文件夹走 parent_guid，顶层媒体库源走 ancestor_guid，
+      // 任一为空自动回退另一种形态（参照 fnos_tv_danmu v1.2.9 修复「暂无内容」）。
+      _browseItems = await _app.api.fetchItemsInContainer(guid);
     } catch (e) {
       debugPrint('fetchItems error: $e');
+      _browseItems = const <PlayListItem>[];
     }
     if (mounted) setState(() => _loading = false);
   }

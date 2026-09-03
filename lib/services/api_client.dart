@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'auth_utils.dart';
+import '../models/play_list_item.dart';
 
 class ApiClient {
   late Dio _dio;
@@ -81,6 +82,55 @@ class ApiClient {
   Future<Map<String, dynamic>> getItemList(Map<String, dynamic> body) async {
     final resp = await _dio.post('api/v1/item/list', data: body);
     return resp.data;
+  }
+
+  /// 浏览媒体库/文件夹内的所有条目（自动翻页取满 total）。
+  ///
+  /// FnOS 嵌套文件夹 guid 以 `fv_` 开头，必须用 `parent_guid` 才能列出子项；
+  /// 顶层媒体库源 guid 用 `ancestor_guid`。两者任一返回空列表时，自动回退尝试
+  /// 另一种 guid 形态（参照 Java 原项目 fnos_tv_danmu v1.2.9 修复「暂无内容」）。
+  Future<List<PlayListItem>> fetchItemsInContainer(String guid, {bool? forceParent}) async {
+    final useParentFirst = forceParent ?? guid.startsWith('fv_');
+    final first = await _fetchItemPageBatch(guid, useParentFirst);
+    if (first.isNotEmpty) return first;
+    // 首轮空列表：回退尝试另一种 guid 形态（fv_ 文件夹试 ancestor_guid，媒体库源试 parent_guid）
+    final alt = await _fetchItemPageBatch(guid, !useParentFirst);
+    return alt;
+  }
+
+  Future<List<PlayListItem>> _fetchItemPageBatch(String guid, bool useParent) async {
+    final all = <PlayListItem>[];
+    int page = 1;
+    const pageSize = 200;
+    while (true) {
+      final body = <String, dynamic>{
+        'tags': {
+          'type': useParent
+              ? ['Movie', 'TV', 'Directory', 'Video', 'Episode', 'Season', 'Collection', 'Folder', 'folder']
+              : ['Movie', 'TV', 'Directory', 'Video'],
+        },
+        'exclude_grouped_video': useParent ? 0 : 1,
+        'sort_type': useParent ? 'ASC' : 'DESC',
+        'sort_column': useParent ? 'sort_title' : 'create_time',
+        'page': page,
+        'page_size': pageSize,
+      };
+      if (useParent) {
+        body['parent_guid'] = guid;
+      } else {
+        body['ancestor_guid'] = guid;
+      }
+      final resp = await getItemList(body);
+      if (resp['code'] != 0 || resp['data'] == null || resp['data']['list'] == null) break;
+      final list = (resp['data']['list'] as List)
+          .map((e) => PlayListItem.fromJson(e))
+          .toList();
+      all.addAll(list);
+      final total = (resp['data']['total'] ?? 0).toInt();
+      if (list.isEmpty || all.length >= total) break;
+      page++;
+    }
+    return all;
   }
 
   Future<Map<String, dynamic>> getEpisodeList(String id) async {
