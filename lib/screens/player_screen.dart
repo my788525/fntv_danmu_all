@@ -370,7 +370,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _videoCtrl = PlayerFactory.create(
       core: core,
       url: url,
-      headers: _app!.api.headers,
+      headers: _app!.api.mediaHeaders(url),
       mpvSettings: _mpvSettingsForPlayback(),
     );
     _mpvCtrl?.onPositionRegression = (lastStable) {

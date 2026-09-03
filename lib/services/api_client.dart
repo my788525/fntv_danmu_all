@@ -86,7 +86,7 @@ class ApiClient {
   }
 
   // ====== 文件级调试日志（adb 联调用；发布稳定后默认关闭，需要时改回 true）======
-  static const bool _kDebugApiLog = false;
+  static const bool _kDebugApiLog = true;
   void _apiDebug(String msg) {
     if (!_kDebugApiLog) return;
     // release 构建也保证进 logcat（tag 通常为 flutter）
@@ -160,6 +160,13 @@ class ApiClient {
       final types = list.take(8).map((e) => '${e.type}:${e.title}').join(', ');
       _apiDebug('RESP list=${list.length} total=${resp['data']['total']} sample=[$types]');
       all.addAll(list);
+      final base = all.length - list.length;
+      for (var i = 0; i < list.length; i++) {
+        final it = list[i];
+        if (it.isFolder) {
+          _apiDebug('FOLDER idx=${base + i} guid=${it.guid} title=${it.title} type=${it.type}');
+        }
+      }
       final total = (resp['data']['total'] ?? 0).toInt();
       if (list.isEmpty || all.length >= total) break;
       page++;
@@ -233,6 +240,39 @@ class ApiClient {
     };
     if (_token != null) {
       h['Authorization'] = _token!;
+    }
+    return h;
+  }
+
+  /// 播放器（media_kit / ExoPlayer）直接拉流时所需的请求头。
+  ///
+  /// 关键修复：Dio 拦截器会自动给所有【API 请求】加 Authx 签名，但播放器是
+  /// 独立 HTTP 拉流（不经过 Dio），必须在此显式带上 Authx，否则 fnOS 的
+  /// /v/api/v1/media/range 端点返回 403 → 表现为「黑屏 + 控制栏读不到时长」
+  /// （两个内核都会失败，因为问题在流地址鉴权而非解码）。
+  /// 头字段与 Java 端 AuthInterceptor 对齐：Authx / Cookie / x-trim-client /
+  /// x-trim-client-version / Authorization。
+  Map<String, String> mediaHeaders(String url) {
+    final h = <String, String>{
+      'Content-Type': 'application/json',
+      'Cookie': 'mode=relay',
+      'x-trim-client': 'web',
+      'x-trim-client-version': '608',
+    };
+    if (_token != null) {
+      h['Authorization'] = _token!;
+    }
+    try {
+      final uri = Uri.parse(url);
+      final path = uri.path.isNotEmpty ? uri.path : '/';
+      final baseHost = Uri.tryParse(_baseUrl)?.host ?? '';
+      // 仅对 fnOS 同域（或无法判定 host）的地址加 Authx；外部直链一般忽略该头。
+      // Authx 以 path 签名（不含 query），与 Java AuthInterceptor.genAuthx(path, null) 一致。
+      if (baseHost.isEmpty || uri.host.isEmpty || uri.host == baseHost) {
+        h['Authx'] = FnAuthUtils.genAuthx(path, null);
+      }
+    } catch (_) {
+      // URL 解析失败时不附加 Authx，避免崩溃（拉流会按服务端响应走正常失败路径）。
     }
     return h;
   }
