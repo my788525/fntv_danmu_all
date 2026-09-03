@@ -85,8 +85,8 @@ class ApiClient {
     return resp.data;
   }
 
-  // ====== 文件级调试日志（adb 联调用；发布稳定后可置 _kDebugApiLog=false 关闭）======
-  static const bool _kDebugApiLog = true;
+  // ====== 文件级调试日志（adb 联调用；发布稳定后默认关闭，需要时改回 true）======
+  static const bool _kDebugApiLog = false;
   void _apiDebug(String msg) {
     if (!_kDebugApiLog) return;
     // release 构建也保证进 logcat（tag 通常为 flutter）
