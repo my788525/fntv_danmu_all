@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/play_list_item.dart';
 import '../services/api_client.dart';
 import '../utils/theme.dart';
@@ -95,35 +94,38 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
   Future<void> _loadEpisodesForSeason(PlayListItem season, List<PlayListItem> all) async {
-    // 本地扁平数据优先
+    List<PlayListItem> eps = const <PlayListItem>[];
+    // 本地扁平数据优先（媒体库浏览已拉全后代，秒开零请求）
     final local = all
         .where((e) => e.type == 'Episode' && (e.parentGuid ?? '') == season.guid)
         .toList()
       ..sort((a, b) => _epNum(a).compareTo(_epNum(b)));
     if (local.isNotEmpty) {
-      _episodes = local;
-      if (mounted) setState(() {});
-      return;
-    }
-    // 兜底：专用接口
-    try {
-      final resp = await widget.api.getEpisodeList(season.guid);
-      final data = resp['data'];
-      if (data is List) {
-        final list = data
-            .whereType<Map>()
-            .map((e) => PlayListItem.fromJson(Map<String, dynamic>.from(e)))
-            .toList()
-          ..sort((a, b) => _epNum(a).compareTo(_epNum(b)));
-        _episodes = list;
-        if (mounted) setState(() {});
-        return;
+      eps = local;
+    } else {
+      // 兜底：专用接口（扁平数据缺该季集时）
+      try {
+        final resp = await widget.api.getEpisodeList(season.guid);
+        final data = resp['data'];
+        if (data is List) {
+          eps = data
+              .whereType<Map>()
+              .map((e) => PlayListItem.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+            ..sort((a, b) => _epNum(a).compareTo(_epNum(b)));
+        }
+      } catch (e) {
+        debugPrint('SeriesScreen getEpisodeList error: $e');
       }
-    } catch (e) {
-      debugPrint('SeriesScreen getEpisodeList error: $e');
     }
-    _episodes = [];
-    if (mounted) setState(() {});
+    // 关键：切季时 _loading 由 _onSeasonTap 置 true，必须在此复位，
+    // 否则 body 会一直停在 loading 分支（集已取到却不显示）。
+    if (mounted) {
+      setState(() {
+        _episodes = eps;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _loadViaApi() async {
@@ -249,7 +251,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
         Expanded(
           child: _episodes.isEmpty
               ? const Center(child: Text('暂无剧集', style: TextStyle(color: Colors.grey)))
-              : _buildEpisodeGrid(),
+              : _buildEpisodeList(),
         ),
       ],
     );
@@ -282,97 +284,96 @@ class _SeriesScreenState extends State<SeriesScreen> {
     );
   }
 
-  Widget _buildEpisodeGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.72,
-      ),
+  Widget _buildEpisodeList() {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 20),
       itemCount: _episodes.length,
-      itemBuilder: (_, i) => _episodeCard(_episodes[i]),
+      separatorBuilder: (_, __) => const Divider(
+        height: 1, color: Color(0xFF2A2A2A), indent: 14, endIndent: 14),
+      itemBuilder: (_, i) => _episodeTile(_episodes[i]),
     );
   }
 
-  Widget _episodeCard(PlayListItem ep) {
-    final url = widget.api.getImageUrl(ep.poster, width: 320);
+  Widget _episodeTile(PlayListItem ep) {
     final watched = ep.watched == 1 || ep.ts > 0;
+    final hasProgress = ep.ts > 0;
     return InkWell(
-      borderRadius: BorderRadius.circular(10),
       onTap: () => _onEpisodeTap(ep),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: url.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: url,
-                          httpHeaders: widget.api.imageHeaders,
-                          fit: BoxFit.cover,
-                          fadeInDuration: Duration.zero,
-                          fadeOutDuration: Duration.zero,
-                          placeholder: (_, __) =>
-                              Container(color: const Color(0xFF2A2A2A)),
-                          errorWidget: (_, __, ___) => const Icon(
-                            Icons.movie_outlined, color: Colors.grey, size: 28),
-                        )
-                      : Container(
-                          color: const Color(0xFF2A2A2A),
-                          child: const Center(
-                            child: Icon(Icons.movie_outlined, color: Colors.grey, size: 28)),
-                        ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 集数（宽列，便于扫读）
+            SizedBox(
+              width: 42,
+              child: Text(
+                ep.episodeNumber > 0 ? '${ep.episodeNumber}' : '·',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: FnTheme.danmuGreen,
                 ),
-                // 集数角标
-                Positioned(
-                  left: 0, top: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(10),
-                        bottomRight: Radius.circular(10)),
-                    ),
-                    child: Text(
-                      ep.episodeNumber > 0 ? '第${ep.episodeNumber}集' : '',
-                      style: const TextStyle(color: Colors.white, fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-                if (watched)
-                  const Positioned(
-                    right: 6, top: 6,
-                    child: Icon(Icons.check_circle_rounded,
-                      color: FnTheme.danmuGreen, size: 18),
-                  ),
-                // 续播进度
-                if (ep.ts > 0)
-                  Positioned(
-                    left: 0, right: 0, bottom: 0,
-                    child: Container(
-                      height: 3,
-                      color: FnTheme.danmuGreen.withOpacity(0.85),
-                    ),
-                  ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            ep.title ?? (ep.episodeNumber > 0 ? '第${ep.episodeNumber}集' : '未命名'),
-            style: const TextStyle(fontSize: 12, color: FnTheme.textPrimary),
-            maxLines: 2, overflow: TextOverflow.ellipsis,
-          ),
-        ],
+            const SizedBox(width: 12),
+            // 标题 + 续播进度
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ep.title ?? (ep.episodeNumber > 0 ? '第${ep.episodeNumber}集' : '未命名'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: FnTheme.textPrimary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (hasProgress)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: LayoutBuilder(
+                        builder: (ctx, c) => Container(
+                          height: 3,
+                          width: c.maxWidth,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: _progressFactor(ep),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: FnTheme.danmuGreen,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (watched)
+              const Icon(Icons.check_circle_rounded,
+                color: FnTheme.danmuGreen, size: 18),
+            const Icon(Icons.chevron_right_rounded,
+              color: FnTheme.textMuted, size: 20),
+          ],
+        ),
       ),
     );
+  }
+
+  double _progressFactor(PlayListItem ep) {
+    final dur = ep.duration > 0 ? ep.duration : 0;
+    if (dur <= 0 || ep.ts <= 0) return 0.0;
+    final f = ep.ts / dur;
+    return f.clamp(0.03, 1.0);
   }
 }
