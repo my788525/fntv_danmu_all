@@ -85,6 +85,15 @@ class ApiClient {
     return resp.data;
   }
 
+  /// 按 guid 取单个条目的元信息（标题、类型、parent_guid 等）。
+  /// 用于解析「虚拟文件夹」：FnOS 音乐库等场景下，目录节点不会出现在
+  /// ancestor 平铺结果里，只能从子项的 parent_guid 得知其 guid，再用本接口取名字。
+  Future<Map<String, dynamic>> getItemInfo(String guid) async {
+    _apiDebug('getItemInfo guid=$guid');
+    final resp = await _dio.get('api/v1/item/$guid');
+    return resp.data;
+  }
+
   // ====== 文件级调试日志（adb 联调用；发布稳定后默认关闭，需要时改回 true）======
   static const bool _kDebugApiLog = true;
   void _apiDebug(String msg) {
@@ -115,6 +124,21 @@ class ApiClient {
     'Movie', 'TV', 'Directory', 'Video', 'Episode', 'Season', 'Collection', 'Folder', 'folder',
   ];
 
+  /// 拉取某媒体库（顶层源）下的全部后代条目（自动翻页取满）。
+  ///
+  /// 用于「文件夹式层级浏览」：FnOS 对媒体库源只能用 ancestor_guid 列出其下所有
+  /// 后代（parent_guid 对库 guid 恒返回空），且单个条目带 parent_guid 指向其父节点。
+  /// 因此一次性拉全量，由 UI 按 parent_guid 分组，即可重建出多级目录树。
+  /// exclude_grouped_video 统一为 0，避免漏掉被服务端 grouped 标记的视频。
+  Future<List<PlayListItem>> fetchLibraryTree(String libGuid) async {
+    _apiDebug('fetchLibraryTree libGuid=$libGuid');
+    final items = await _fetchItemPageBatch(libGuid, false, excludeGrouped: false);
+    _apiDebug('fetchLibraryTree 拉到 ${items.length} 条后代');
+    return items;
+  }
+
+  /// 兼容旧调用：列出某容器（库源或 fv_ 目录）内容。
+  /// 层级浏览请改用 [fetchLibraryTree] + 前端按 parent_guid 分组。
   Future<List<PlayListItem>> fetchItemsInContainer(String guid, {bool? forceParent}) async {
     final useParentFirst = forceParent ?? guid.startsWith('fv_');
     _apiDebug('fetchItemsInContainer guid=$guid useParentFirst=$useParentFirst');

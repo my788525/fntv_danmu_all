@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_state.dart';
 import '../models/media_item.dart';
 import '../models/play_list_item.dart';
-
 import '../utils/theme.dart';
-import '../widgets/media_card.dart';
-
 import 'player_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -18,131 +14,207 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
+/// 文件夹层级导航中的一个节点。
+/// [parentKey] 用于在前端重建目录树时筛选「直接子项」：
+///   - '' 表示媒体库根的直接子项；
+///   - 否则为某个目录条目的 guid，表示「该目录下的直接子项」。
+class _NavNode {
+  final String parentKey;
+  final String title;
+  _NavNode({required this.parentKey, required this.title});
+}
+
 class _LibraryScreenState extends State<LibraryScreen> {
   List<MediaDbItem> _libraries = [];
-  bool _loading = true;
-  String? _browseGuid;
-  String? _browseTitle;
-  List<PlayListItem>? _browseItems;
+  bool _loadingLibs = true;
 
-  /// 媒体库查看方式：false = 海报墙（原有默认行为），true = 文件夹
-  bool _folderView = false;
-  static const _kFolderViewKey = 'library_folder_view';
+  // 当前正在浏览的媒体库
+  String? _libraryGuid;
+  String? _libraryTitle;
+  // 当前库拉到的全量后代（按 parent_guid 在前端分组建树）
+  List<PlayListItem>? _allItems;
+  // 全部「文件夹节点」：既含结果里真实存在的 Directory/TV 项，
+  // 也含仅能从子项 parent_guid 推断、再用 item/{guid} 解析出名字的「虚拟文件夹」。
+  Map<String, PlayListItem> _folderNodes = {};
+  bool _loadingTree = false;
+
+  // 导航栈：栈底 = 库根，越往上层级越深
+  final List<_NavNode> _stack = [];
+
+  AppState get _app => context.read<AppState>();
 
   @override
   void initState() {
     super.initState();
-    _loadFolderView();
     _loadLibraries();
   }
 
-  AppState get _app => context.read<AppState>();
-
-  /// 恢复上次选择的媒体库查看方式
-  Future<void> _loadFolderView() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getBool(_kFolderViewKey) ?? false;
-      if (!mounted) return;
-      setState(() => _folderView = saved);
-    } catch (e) {
-      debugPrint('loadFolderView error: $e');
-    }
-  }
-
-  /// 切换查看方式并持久化；若正在浏览某个库，立即按新方式重新拉取
-  Future<void> _setFolderView(bool value) async {
-    if (_folderView == value) return;
-    setState(() => _folderView = value);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kFolderViewKey, value);
-    } catch (e) {
-      debugPrint('saveFolderView error: $e');
-    }
-    final guid = _browseGuid;
-    if (guid != null) {
-      await _fetchItems(guid, _browseTitle ?? '');
-    }
-  }
-
   Future<void> _loadLibraries() async {
-    setState(() { _loading = true; _browseGuid = null; _browseItems = null; });
+    setState(() => _loadingLibs = true);
     try {
       final resp = await _app.api.getMediaDbList();
       if (resp['code'] == 0 && resp['data'] != null) {
-        _libraries = (resp['data'] as List).map((e) => MediaDbItem.fromJson(e)).toList();
+        _libraries = (resp['data'] as List)
+            .map((e) => MediaDbItem.fromJson(e))
+            .toList();
       }
     } catch (e) {
       debugPrint('loadLibraries error: $e');
     }
-    if (mounted) setState(() => _loading = false);
+    if (mounted) setState(() => _loadingLibs = false);
   }
 
-  Future<void> _fetchItems(String guid, String title) async {
-    setState(() { _loading = true; _browseGuid = guid; _browseTitle = title; });
+  /// 进入某个媒体库：拉全量后代、解析虚拟文件夹，并初始化导航栈为「库根」。
+  ///
+  /// FnOS 的祖先查询（ancestor_guid）会返回整个媒体库的所有后代（平铺），
+  /// 但音乐库等场景下的「文件夹」节点不会出现在结果里——只能从子视频的
+  /// parent_guid 得知其 guid。为此：收集所有被引用却不在结果中的 parent_guid，
+  /// 用 item/{guid} 逐个解析出名字，作为「虚拟文件夹」并入目录树。
+  Future<void> _openLibrary(MediaDbItem lib) async {
+    setState(() {
+      _libraryGuid = lib.guid;
+      _libraryTitle = lib.title;
+      _allItems = null;
+      _folderNodes = {};
+      _loadingTree = true;
+      _stack
+        ..clear()
+        ..add(_NavNode(parentKey: '', title: lib.title));
+    });
+    List<PlayListItem> items;
     try {
-      // 文件夹方式：强制按目录层级逐级浏览（parent_guid）。
-      // 海报方式：沿用原有自动判定——顶层媒体库源走 ancestor_guid，
-      // fv_ 嵌套目录走 parent_guid，任一为空自动回退另一种形态
-      // （参照 fnos_tv_danmu v1.2.9 修复「暂无内容」）。
-      _browseItems = _folderView
-          ? await _app.api.fetchItemsInContainer(guid, forceParent: true)
-          : await _app.api.fetchItemsInContainer(guid);
+      items = await _app.api.fetchLibraryTree(lib.guid);
     } catch (e) {
-      debugPrint('fetchItems error: $e');
-      _browseItems = const <PlayListItem>[];
+      debugPrint('openLibrary error: $e');
+      items = const <PlayListItem>[];
     }
-    if (mounted) setState(() => _loading = false);
+    if (!mounted) return;
+
+    // 1) 真实目录节点（结果中已存在）
+    final folderNodes = <String, PlayListItem>{};
+    for (final it in items) {
+      if (it.isFolder && it.guid.isNotEmpty) folderNodes[it.guid] = it;
+    }
+    // 2) 收集被引用但不在结果中的父 guid（虚拟文件夹）
+    final present = <String>{for (final it in items) it.guid};
+    final missing = <String>{};
+    for (final it in items) {
+      final pg = it.parentGuid ?? '';
+      if (pg.isNotEmpty && !present.contains(pg)) missing.add(pg);
+    }
+    // 3) 并发解析虚拟文件夹的名字
+    await Future.wait(missing.map((g) async {
+      try {
+        final resp = await _app.api.getItemInfo(g);
+        final d = resp['data'];
+        if (d is Map && d['guid'] != null) {
+          final node = PlayListItem.fromJson(d as Map<String, dynamic>);
+          if (node.guid.isNotEmpty) folderNodes[node.guid] = node;
+        }
+      } catch (_) {
+        // 个别 guid 解析失败时忽略，不影响其余层级
+      }
+    }));
+
+    if (!mounted) return;
+    setState(() {
+      _allItems = items;
+      _folderNodes = folderNodes;
+      _loadingTree = false;
+    });
   }
 
-  void _onItemTap(PlayListItem item) async {
+  /// 当前节点（栈顶）的直接子项：合并「结果里的子项」与「虚拟文件夹子项」，
+  /// 目录在前、视频在后。
+  List<PlayListItem> _childrenOf(String parentKey) {
+    if (_allItems == null) return const <PlayListItem>[];
+    final libGuid = _libraryGuid ?? '';
+    final presentGuids = <String>{};
+    final out = <PlayListItem>[];
+    for (final it in _allItems!) {
+      final pg = it.parentGuid ?? '';
+      // 兼容：飞牛可能用库 guid 作为库根直接视频的 parent_guid
+      final effective = (parentKey == '' && pg == libGuid) ? '' : pg;
+      if (effective == parentKey) {
+        out.add(it);
+        if (it.guid.isNotEmpty) presentGuids.add(it.guid);
+      }
+    }
+    // 虚拟文件夹：被引用为父、但自身不在结果里
+    for (final f in _folderNodes.values) {
+      final pg = f.parentGuid ?? '';
+      final effective = (parentKey == '' && pg == libGuid) ? '' : pg;
+      if (effective == parentKey && !presentGuids.contains(f.guid)) {
+        out.add(f);
+      }
+    }
+    out.sort((a, b) {
+      final af = a.isFolder ? 0 : 1;
+      final bf = b.isFolder ? 0 : 1;
+      if (af != bf) return af.compareTo(bf);
+      return _sortKey(a).compareTo(_sortKey(b));
+    });
+    return out;
+  }
+
+  String _sortKey(PlayListItem it) => (it.title ?? it.tvTitle ?? '').toLowerCase();
+
+  void _onItemTap(PlayListItem item) {
     if (item.isFolder) {
-      // 文件夹/剧集容器：进入下级目录浏览
-      _fetchItems(item.guid, item.title ?? '');
+      // 进入下级目录：压栈，按该目录 guid 筛选其直接子项
+      setState(() => _stack.add(_NavNode(parentKey: item.guid, title: item.title ?? '')));
       return;
     }
-    // 文件夹模式：可播放项直接播放，跳过详情页；
-    // 将当前目录下所有同级可播放项构建为播放列表，按顺序自动连播、播完循环回头部。
-    final playlist = (_browseItems?.where((e) => e.isPlayable).toList()) ?? <PlayListItem>[item];
+    // 视频：直接播放，播放列表为当前层所有可播放项（顺序连播）
+    final currentParentKey = _stack.isNotEmpty ? _stack.last.parentKey : '';
+    final playlist = _childrenOf(currentParentKey).where((e) => e.isPlayable).toList();
     int index = playlist.indexWhere((e) => e.guid == item.guid);
     if (index < 0) {
       playlist.add(item);
       index = playlist.length - 1;
     }
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => PlayerScreen(
-        itemGuid: item.guid,
-        title: item.title ?? '',
-        poster: item.poster ?? '',
-        category: item.categoryLabel,
-        tvTitle: item.tvTitle ?? '',
-        parentGuid: item.parentGuid,
-        logoUrl: '',
-        playlist: playlist,
-        playlistIndex: index,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          itemGuid: item.guid,
+          title: item.title ?? '',
+          poster: item.poster ?? '',
+          category: item.categoryLabel,
+          tvTitle: item.tvTitle ?? '',
+          parentGuid: item.parentGuid,
+          logoUrl: '',
+          playlist: playlist,
+          playlistIndex: index,
+        ),
       ),
-    ));
-    if (mounted) _app.fetchServerPlayList();
+    ).then((_) {
+      if (mounted) _app.fetchServerPlayList();
+    });
   }
 
-  int _calcColumns(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    if (w > 1200) return 7;
-    if (w > 900) return 5;
-    if (w > 600) return 4;
-    return 3;
+  /// 返回上一级；若已在库根，则返回媒体库列表。
+  void _goBack() {
+    if (_stack.length > 1) {
+      setState(() => _stack.removeLast());
+    } else {
+      setState(() {
+        _libraryGuid = null;
+        _libraryTitle = null;
+        _allItems = null;
+        _folderNodes = {};
+        _stack.clear();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_browseGuid != null) {
+    if (_libraryGuid != null) {
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {
-          if (!didPop) {
-            setState(() { _browseGuid = null; _browseItems = null; });
-          }
+          if (!didPop) _goBack();
         },
         child: _buildBrowseView(),
       );
@@ -151,31 +223,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildLibraryList() {
-    if (_loading) {
+    if (_loadingLibs) {
       return const Center(child: CircularProgressIndicator(color: FnTheme.danmuGreen));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text('媒体库', style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          )),
+          child: Text('媒体库',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            )),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Row(
-            children: [
-              Text('${_libraries.length} 个资料库',
-                style: const TextStyle(color: FnTheme.textSecondary, fontSize: 13)),
-              const Spacer(),
-              _buildViewModeSwitch(),
-            ],
-          ),
+          child: Text('${_libraries.length} 个资料库',
+            style: const TextStyle(color: FnTheme.textSecondary, fontSize: 13)),
         ),
-        // Library list
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadLibraries,
@@ -188,7 +253,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   margin: const EdgeInsets.only(bottom: 10),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => _fetchItems(lib.guid, lib.title),
+                    onTap: () => _openLibrary(lib),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Row(
@@ -232,74 +297,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// 查看方式切换（海报 / 文件夹）
-  Widget _buildViewModeSwitch() {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: FnTheme.cardBg,
-        borderRadius: BorderRadius.circular(17),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _viewModeChip(
-            icon: Icons.grid_view_rounded,
-            label: '海报',
-            selected: !_folderView,
-            onTap: () => _setFolderView(false),
-          ),
-          _viewModeChip(
-            icon: Icons.folder_outlined,
-            label: '文件夹',
-            selected: _folderView,
-            onTap: () => _setFolderView(true),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _viewModeChip({
-    required IconData icon,
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: selected ? FnTheme.danmuGreen : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15,
-              color: selected ? Colors.black : FnTheme.textSecondary),
-            const SizedBox(width: 5),
-            Text(label,
-              style: TextStyle(
-                fontSize: 13,
-                color: selected ? Colors.black : FnTheme.textSecondary,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              )),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildBrowseView() {
+    final currentParentKey = _stack.isNotEmpty ? _stack.last.parentKey : '';
+    final items = _childrenOf(currentParentKey);
     return Column(
       children: [
-        // Back bar
+        // 顶栏：返回 + 当前层级标题 + 项计数
         Container(
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -307,75 +310,59 @@ class _LibraryScreenState extends State<LibraryScreen> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded),
-                onPressed: () => setState(() { _browseGuid = null; _browseItems = null; }),
+                onPressed: _goBack,
               ),
               Expanded(
-                child: Text(_browseTitle ?? '',
+                child: Text(
+                  _stack.isNotEmpty ? _stack.last.title : (_libraryTitle ?? ''),
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              if (_browseItems != null)
+              if (_allItems != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text('${_browseItems!.length} 项',
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text('${items.length} 项',
                     style: const TextStyle(color: FnTheme.textSecondary, fontSize: 13)),
                 ),
-              _buildViewModeSwitch(),
-              const SizedBox(width: 8),
             ],
           ),
         ),
         Expanded(
-          child: _browseItems == null
+          child: _loadingTree
               ? const Center(child: CircularProgressIndicator(color: FnTheme.danmuGreen))
-              : _browseItems!.isEmpty
-                  ? const Center(child: Text('暂无内容', style: TextStyle(color: Colors.grey)))
-                  : _folderView
-                      ? _buildFolderList()
-                      : GridView.builder(
-                          padding: const EdgeInsets.all(12),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: _calcColumns(context),
-                            childAspectRatio: 0.50,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                          ),
-                          itemCount: _browseItems!.length,
-                          itemBuilder: (_, i) => MediaCard(
-                            item: _browseItems![i],
-                            imageUrl: _app.api.getImageUrl(_browseItems![i].poster),
-                            onTap: () => _onItemTap(_browseItems![i]),
-                            showTitle: true,
-                            expandWidth: true,
-                          ),
-                        ),
+              : _allItems == null
+                  ? const SizedBox.shrink()
+                  : items.isEmpty
+                      ? const Center(child: Text('暂无内容', style: TextStyle(color: Colors.grey)))
+                      : _buildTreeList(items),
         ),
       ],
     );
   }
 
-  /// 文件夹方式：目录在上、可播放视频在下，逐层进入
-  Widget _buildFolderList() {
-    final folders = _browseItems!.where((e) => e.isFolder).toList();
-    final files = _browseItems!.where((e) => !e.isFolder).toList();
+  /// 当前层：文件夹分区在前、视频分区在后。
+  Widget _buildTreeList(List<PlayListItem> items) {
+    final folders = items.where((e) => e.isFolder).toList();
+    final files = items.where((e) => !e.isFolder).toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
       children: [
         if (folders.isNotEmpty) ...[
-          _buildSectionTitle('文件夹 (${folders.length})'),
-          ...folders.map(_buildFolderRow),
+          _sectionTitle('文件夹 (${folders.length})'),
+          ...folders.map(_folderRow),
           const SizedBox(height: 8),
         ],
         if (files.isNotEmpty) ...[
-          _buildSectionTitle('视频 (${files.length})'),
-          ...files.map(_buildFileRow),
+          _sectionTitle('视频 (${files.length})'),
+          ...files.map(_fileRow),
         ],
       ],
     );
   }
 
-  Widget _buildSectionTitle(String text) {
+  Widget _sectionTitle(String text) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 12, 6, 6),
       child: Text(text,
@@ -387,7 +374,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _buildFolderRow(PlayListItem item) {
+  Widget _folderRow(PlayListItem item) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
@@ -416,7 +403,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _buildFileRow(PlayListItem item) {
+  Widget _fileRow(PlayListItem item) {
     final url = _app.api.getImageUrl(item.poster, width: 200);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
