@@ -6,6 +6,7 @@ import '../models/media_item.dart';
 import '../models/play_list_item.dart';
 import '../utils/theme.dart';
 import 'player_screen.dart';
+import 'series_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -160,6 +161,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String _sortKey(PlayListItem it) => (it.title ?? it.tvTitle ?? '').toLowerCase();
 
   void _onItemTap(PlayListItem item) {
+    // 剧集（TV）或季（Season）：进入「选集」页，而非直接播放
+    if (item.type == 'TV' || item.type == 'Season') {
+      final tvGuid = item.type == 'TV' ? item.guid : (item.parentGuid ?? '');
+      final tvTitle = item.type == 'TV'
+          ? (item.title ?? '')
+          : (item.parentTitle ?? item.title ?? '');
+      final tvPoster = item.type == 'TV' ? (item.poster ?? '') : '';
+      final initialSeason = item.type == 'Season' ? item.guid : null;
+      if (tvGuid.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SeriesScreen(
+              tvGuid: tvGuid,
+              tvTitle: tvTitle,
+              tvPoster: tvPoster,
+              allItems: _allItems,
+              api: _app.api,
+              initialSeasonGuid: initialSeason,
+            ),
+          ),
+        );
+        return;
+      }
+    }
     if (item.isFolder) {
       // 进入下级目录：压栈，按该目录 guid 筛选其直接子项
       setState(() => _stack.add(_NavNode(parentKey: item.guid, title: item.title ?? '')));
