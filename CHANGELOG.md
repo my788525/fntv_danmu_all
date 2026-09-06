@@ -56,6 +56,16 @@
 
 ---
 
+## 七、屏幕方向适配（比亚迪车机）
+
+- **修复真机上打开 App 强制旋转为竖屏、且不跟随车机横竖屏切换的问题**。
+- 根因：Manifest 曾声明 `android:screenOrientation="nosensor"`。该值语义是**忽略方向传感器、锁死为设备默认方向**（并非「跟随系统」），在比亚迪车机上默认方向被解析为竖屏，导致打开即转竖屏、车机切横屏后 App 不跟随。
+- 修复：**移除 `screenOrientation` 声明**（恢复 Android 默认 `unspecified` = 完全跟随车机系统当前横竖屏），全代码不调用 `setPreferredOrientations` 锁定方向；配合 `configChanges` 已声明 `orientation|screenSize|screenLayout|smallestScreenSize` 等，方向切换时 Flutter 不重建 Activity、布局经 `MediaQuery` 自适应。
+- 符合比亚迪生态开放平台「应用市场审核指南」要求：**「应用宜能适配支持横竖屏布局，并支持横竖屏自动切换」**（DiLink 旋转屏车型可通过方向盘按钮 / 设置切换横竖屏）。
+- 播放器内保留用户主动点击的「横屏 / 竖屏」切换按钮；退出播放器自动恢复为跟随系统。
+
+---
+
 ## 版本
 
 - 当前版本 `1.0.0`（pubspec `1.0.0+1`）。

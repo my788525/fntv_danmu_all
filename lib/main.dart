@@ -14,8 +14,11 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   LogBuffer.instance.install();
   MediaKit.ensureInitialized();
-  // 车机适配：不主动调用 setPreferredOrientations 强制旋转。
-  // 方向完全由系统/设备当前状态决定（配合 AndroidManifest 的 screenOrientation=nosensor），
+  // 车机适配（比亚迪 DiLink）：不调用 setPreferredOrientations 强制任何方向，
+  // Manifest 也不声明 screenOrientation（默认 unspecified = 跟随系统当前横竖屏）。
+  // 注意：之前用的 screenOrientation="nosensor" 语义是「忽略传感器、锁死设备默认
+  // 方向」，在 BYD 车机上会锁成竖屏且不跟随旋转，已移除（符合 BYD 审核规范
+  // 「应用宜支持横竖屏布局并支持横竖屏自动切换」）。
   // 布局通过 MediaQuery 监听屏幕变化自适应（横竖皆可用）。
   runApp(const FnTvApp());
 }
