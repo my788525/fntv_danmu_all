@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'auth_utils.dart';
 import '../models/play_list_item.dart';
 
@@ -94,8 +95,9 @@ class ApiClient {
     return resp.data;
   }
 
-  // ====== 文件级调试日志（adb 联调用；发布稳定后默认关闭，需要时改回 true）======
-  static const bool _kDebugApiLog = true;
+  // ====== 文件级调试日志（仅 debug 构建启用；release 自动关闭——每次 API 请求
+  // 都同步写 /sdcard 文件，对老 SoC（如车机高通 652）是可观的无谓磁盘 I/O）======
+  static const bool _kDebugApiLog = !kReleaseMode;
   void _apiDebug(String msg) {
     if (!_kDebugApiLog) return;
     // release 构建也保证进 logcat（tag 通常为 flutter）

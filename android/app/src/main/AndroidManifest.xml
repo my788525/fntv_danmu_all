@@ -11,6 +11,12 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="true">
+        <!-- 低端 GPU 兜底：老款 Adreno（如车机高通 652 的 Adreno 510）Vulkan 驱动陈旧，
+             在 Android 10+ 的 DiLink 上 Impeller-Vulkan 可能掉帧/花屏。禁用 Impeller 回退
+             经典 Skia/OpenGL 路径（Android 10 以下本就自动回退，此行只为覆盖 10+ 机型）。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
