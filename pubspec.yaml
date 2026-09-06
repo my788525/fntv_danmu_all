@@ -1,7 +1,7 @@
 name: fnos_tv_byd
 description: 飞牛影视 BYD 车机专版 - FnOS TV client with danmaku support
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
