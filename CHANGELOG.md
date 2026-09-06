@@ -66,10 +66,19 @@
 
 ---
 
+## 八、低端车机 SoC 优化（高通 652 / Adreno 510）
+
+- **禁用 Impeller 渲染引擎**（Manifest `io.flutter.embedding.android.EnableImpeller=false`）：Flutter 3.32 在 Android 10+ 默认走 Impeller-Vulkan，Adreno 510 的 Vulkan 驱动陈旧，在 Android 10+ 的 DiLink 车机上可能掉帧 / 花屏；显式禁用回退经典 Skia/OpenGL 路径（Android 10 以下引擎本就自动回退，此项覆盖少数 10+ 老机型）。
+- **API 调试日志改为仅 debug 构建启用**：此前 release 包每次 API 请求都 `print` + 同步写 `/sdcard` 日志文件，在老 SoC 上是每次请求都有的无谓磁盘 I/O；debug 联调能力保留。
+- **发行包改用 arm64-v8a 单架构 APK**（`--split-per-abi`）：实测体积 47.1MB → **15.2MB**，车机在线更新下载量降约 2/3。高通 652 为 ARMv8 架构，原生支持 arm64-v8a。
+
+---
+
 ## 版本
 
-- 当前版本 `1.0.1`（pubspec `1.0.1+2`）。
+- 当前版本 `1.0.2`（pubspec `1.0.2+3`）。
+- `v1.0.2`：低端车机 SoC（高通 652）优化（详见「八、低端车机 SoC 优化」），发行包改用 arm64 单架构。
 - `v1.0.1`：修复比亚迪车机打开 App 强制竖屏且不跟随横竖屏切换（详见「七、屏幕方向适配」）。
-- APK 资产名以 `FNTV_All_` 开头，供 App 内在线更新识别。
+- APK 资产名以 `FNTV_All_` 开头，供 App 内在线更新识别；`v1.0.2` 起资产为 arm64-v8a 单架构包。
 
 > 注：原作上游 `jimboo7339/fntv_danmu_all` 的 `main` 分支**不含**本分支的 Authx 拉流签名修复；任何「回到上游基线 / 重新 fork」操作都会回退该修复导致播放黑屏，请始终基于本 `byd-main` 分支。
