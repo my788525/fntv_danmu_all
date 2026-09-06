@@ -72,6 +72,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   AppVideoPlayer? _videoCtrl;
   PlayerCoreType _activeCore = PlayerCoreType.exo;
+  bool _isSwitchingCore = false;
   String _lastPlaybackUrl = '';
   bool _isPlaying = false;
   bool _showControls = true;
@@ -444,6 +445,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         .then((_) async {
       if (!mounted || _videoCtrl == null) return;
       setState(() => _isInitialized = true);
+      _isSwitchingCore = false;
       await _videoCtrl!.play();
       _isPlaying = true;
 
@@ -497,6 +499,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     setState(() => _isInitialized = false);
     _initVideo(_lastPlaybackUrl, forceMpv: true);
+  }
+
+  /// 控制栏快速切换播放内核（Exo ↔ MPV）：断点续播 + 写回用户偏好。
+  /// 内嵌 PGS/DVB 字幕场景 Exo 无法渲染，禁止切回。
+  Future<void> _switchPlayerCore() async {
+    if (_lastPlaybackUrl.isEmpty || _isSwitchingCore) return;
+    final target = _activeCore == PlayerCoreType.mpv
+        ? PlayerCoreType.exo
+        : PlayerCoreType.mpv;
+    if (target == PlayerCoreType.exo &&
+        PlayerFactory.needsMpvForEmbeddedSubtitles(
+          preferEmbedded: _preferEmbeddedSubtitle,
+          subtitleStreams: _subtitleStreams,
+        )) {
+      FnToast.show(context, '内嵌字幕需 MPV 内核，无法切换',
+          type: FnToastType.warning);
+      return;
+    }
+    _isSwitchingCore = true;
+    final pos = _videoCtrl?.position.inSeconds ?? 0;
+    _explicitSeekTs = pos > 0 ? pos : 0;
+    _app.playerCore = target; // 持久化偏好，下次播放沿用
+    if (mounted) {
+      FnToast.show(context, '已切换 ${target.label} 内核', type: FnToastType.info);
+    }
+    setState(() => _isInitialized = false);
+    _initVideo(_lastPlaybackUrl);
   }
 
   Future<void> _selectSubtitleTrack(int index) async {
@@ -1434,6 +1463,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
                 onLoadExternalSubtitle: _loadExternalSubtitle,
                 playbackInfo: _playbackInfoLabel,
+                onSwitchCore: _switchPlayerCore,
                 aspectMode: _aspectMode,
                 onAspectMode: _setAspectMode,
                 hasPrevEpisode: effHasPrev,

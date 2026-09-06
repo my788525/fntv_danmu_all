@@ -47,6 +47,7 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback? onLoadExternalSubtitle;
   final int seekStep;
   final String playbackInfo;
+  final VoidCallback? onSwitchCore;
   final String aspectMode;
   final void Function(String) onAspectMode;
   final VoidCallback? onPrevEpisode;
@@ -94,6 +95,7 @@ class PlayerControls extends StatelessWidget {
     this.onLoadExternalSubtitle,
     this.seekStep = 10,
     this.playbackInfo = '',
+    this.onSwitchCore,
     this.aspectMode = 'fit',
     required this.onAspectMode,
     this.onPrevEpisode,
@@ -201,19 +203,35 @@ class PlayerControls extends StatelessWidget {
                 Row(
                   children: [
                     if (playbackInfo.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black45,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.white12),
+                      GestureDetector(
+                        onTap: onSwitchCore,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: onSwitchCore != null
+                                    ? Colors.white38
+                                    : Colors.white12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (onSwitchCore != null) ...[
+                                const Icon(Icons.swap_horiz_rounded,
+                                    color: Colors.white54, size: 12),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(playbackInfo,
+                                  style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                         ),
-                        child: Text(playbackInfo,
-                            style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600)),
                       ),
                     const SizedBox(width: 8),
                     Expanded(
