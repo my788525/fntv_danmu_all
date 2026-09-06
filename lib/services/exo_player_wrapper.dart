@@ -25,6 +25,8 @@ class ExoPlayerWrapper extends AppVideoPlayer {
   bool _subtitleActive = false;
 
   void Function(Duration lastStable)? onPositionRegression;
+  void Function()? onCompleted;
+  bool _completedFired = false;
 
   Timer? _pollTimer;
 
@@ -92,6 +94,14 @@ class ExoPlayerWrapper extends AppVideoPlayer {
     final h = (e['videoHeight'] as num?)?.toInt() ?? 0;
     if (w > 0 && h > 0) _aspectRatio = w / h;
     positionNotifier.value = _position;
+    // 播放自然结束：停在末尾且不再播放 → 触发一次完成回调（防轮询重复）
+    if (!_completedFired &&
+        _duration.inMilliseconds > 0 &&
+        _position.inMilliseconds >= _duration.inMilliseconds - 1000 &&
+        !_isPlaying) {
+      _completedFired = true;
+      onCompleted?.call();
+    }
     _notifyAll();
   }
 
@@ -102,6 +112,7 @@ class ExoPlayerWrapper extends AppVideoPlayer {
     bool deferSeek = false,
   }) async {
     if (!isSupported) throw UnsupportedError('ExoPlayer only on Android');
+    _completedFired = false;
     _playbackRate = initialSpeed.clamp(0.25, 4.0);
     await ExoPlayerChannel.create(_playerId);
     _startPolling();
@@ -134,6 +145,7 @@ class ExoPlayerWrapper extends AppVideoPlayer {
 
   @override
   Future<void> seekTo(Duration position) async {
+    _completedFired = false;
     await ExoPlayerChannel.seek(_playerId, position.inMilliseconds.clamp(0, 1 << 31));
     _position = position;
     positionNotifier.value = position;

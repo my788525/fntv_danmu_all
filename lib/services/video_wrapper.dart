@@ -45,6 +45,7 @@ class VideoWrapper extends AppVideoPlayer {
   final ValueNotifier<int> networkSpeedBps = ValueNotifier(0);
 
   void Function(Duration lastStable)? onPositionRegression;
+  void Function()? onCompleted;
 
   VideoWrapper({
     required this.url,
@@ -133,6 +134,9 @@ class VideoWrapper extends AppVideoPlayer {
     _mpvPlayer!.stream.buffering.listen((buf) {
       _isBuffering = buf;
       _notifyAll();
+    });
+    _mpvPlayer!.stream.completed.listen((done) {
+      if (done) onCompleted?.call();
     });
     _mpvPlayer!.stream.width.listen((w) {
       final h = _mpvPlayer?.state.height ?? 0;

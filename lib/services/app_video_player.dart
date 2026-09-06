@@ -13,6 +13,10 @@ abstract class AppVideoPlayer implements PlayerAdapter {
 
   void Function(Duration lastStable)? onPositionRegression;
 
+  /// 播放自然结束（播放到结尾）回调。由播放器实现监听底层完成事件后触发，
+  /// 用于自动连播（文件夹 playlist / 剧集 episode）下一项。
+  void Function()? onCompleted;
+
   Future<void> resumeAfterPlay(Duration target);
   Future<void> applyInitialAudioIfNeeded({
     List<AudioStreamInfo>? audioStreams,

@@ -131,6 +131,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // 文件夹连播：来自媒体库/首页浏览视图的同级可播放列表
   List<PlayListItem>? _playlist;
   int _playlistIndex = 0;
+  // 连播保护：每次自然结束后只触发一次续播（防原生 completed 与轮询重复触发）
+  bool _advanceGuard = false;
 
   // Danmu
   List<DanmuComment> _danmuItems = [];
@@ -356,6 +358,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _initVideo(String url, {bool forceMpv = false}) {
     _lastPlaybackUrl = url;
     _disposeVideoCtrl();
+    // 新项开始：复位连播保护（让本项播放到结尾时能再次触发续播）
+    _advanceGuard = false;
     final seekTs = _resolveSeekTs();
     final startAt = seekTs > 0 ? Duration(seconds: seekTs) : null;
 
@@ -373,6 +377,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       headers: _app!.api.mediaHeaders(url),
       mpvSettings: _mpvSettingsForPlayback(),
     );
+    // 接住底层「播放自然结束」事件，用于自动连播（比轮询 position>=duration 可靠）
+    _videoCtrl!.onCompleted = _onPlaybackComplete;
     _mpvCtrl?.onPositionRegression = (lastStable) {
       debugPrint('🔄 Position regression at ${lastStable.inSeconds}s');
     };
@@ -663,6 +669,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _onPlaybackComplete() {
+    // 连播保护：天然结束后只续播一次（原生 completed 事件与轮询可能都触发）
+    if (_advanceGuard) return;
+    _advanceGuard = true;
     // 文件夹连播优先：依次播放同级可播放项，列表播完循环回头部
     if (_playlist != null && _playlist!.isNotEmpty) {
       if (_playlistIndex < _playlist!.length - 1) {
