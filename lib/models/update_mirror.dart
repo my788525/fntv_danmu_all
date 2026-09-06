@@ -19,7 +19,7 @@ class UpdateMirror {
   }
 
   static const repoOwner = 'my788525';
-  static const repoName = 'fntv_danmu_byd';
+  static const repoName = 'fntv_danmu_all';
 
   static String get releasesLatestApi =>
       'https://api.github.com/repos/$repoOwner/$repoName/releases/latest';

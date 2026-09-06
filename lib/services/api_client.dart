@@ -131,47 +131,91 @@ class ApiClient {
     return alt;
   }
 
+  /// 单页请求条数。
+  ///
+  /// FnOS 服务端对 item/list 的 page_size 存在上限（实测约 50），且部分版本
+  /// 在响应里不返回可信的 total。旧实现只在 `all.length >= total` 时才停止翻页，
+  /// 一旦 total 缺失 / 为 0 / 传回字符串，循环在第一页就退出，界面只能看到
+  /// 服务端截断的那一页 —— 即「媒体库只能查看 50 个影视」。
+  ///
+  /// 修复要点：
+  /// 1. 请求条数对齐服务端上限，避免「请求值 > 上限」时 offset 计算不一致；
+  /// 2. 结束条件改为「取到空页才停」，total 只作为可选的提前结束依据；
+  /// 3. 按 guid 去重，服务端未真正翻页（整页重复）时立即停止，不会死循环。
+  static const int _browsePageSize = 50;
+  /// 翻页硬上限，防止服务端异常时无限循环（50 × 400 = 20000 条）。
+  static const int _maxBrowsePages = 400;
+
   Future<List<PlayListItem>> _fetchItemPageBatch(String guid, bool useParent,
       {required bool excludeGrouped}) async {
     final all = <PlayListItem>[];
+    final seen = <String>{};
     int page = 1;
-    const pageSize = 200;
-    while (true) {
+    while (page <= _maxBrowsePages) {
       final body = <String, dynamic>{
         'tags': {'type': _browseTypes},
         'exclude_grouped_video': excludeGrouped ? 1 : 0,
         'sort_type': useParent ? 'ASC' : 'DESC',
         'sort_column': useParent ? 'sort_title' : 'create_time',
         'page': page,
-        'page_size': pageSize,
+        'page_size': _browsePageSize,
       };
       if (useParent) {
         body['parent_guid'] = guid;
       } else {
         body['ancestor_guid'] = guid;
       }
-      _apiDebug('REQ useParent=$useParent exclude=$excludeGrouped guid=$guid body=$body');
+      _apiDebug('REQ useParent=$useParent exclude=$excludeGrouped page=$page guid=$guid body=$body');
       final resp = await getItemList(body);
       _apiDebug('RESP code=${resp['code']} dataNull=${resp['data'] == null}');
       if (resp['code'] != 0 || resp['data'] == null || resp['data']['list'] == null) break;
-      final list = (resp['data']['list'] as List)
-          .map((e) => PlayListItem.fromJson(e))
-          .toList();
+      final rawList = resp['data']['list'];
+      if (rawList is! List) break;
+      final list = rawList.map((e) => PlayListItem.fromJson(e)).toList();
+
+      // guid 去重：服务端翻页异常时可能重复返回同一批数据
+      var added = 0;
+      for (final it in list) {
+        if (it.guid.isNotEmpty && !seen.add(it.guid)) continue;
+        all.add(it);
+        added++;
+      }
+
       final types = list.take(8).map((e) => '${e.type}:${e.title}').join(', ');
-      _apiDebug('RESP list=${list.length} total=${resp['data']['total']} sample=[$types]');
-      all.addAll(list);
-      final base = all.length - list.length;
+      _apiDebug('RESP page=$page list=${list.length} added=$added '
+          'total=${resp['data']['total']} sample=[$types]');
+      final base = all.length - added;
       for (var i = 0; i < list.length; i++) {
         final it = list[i];
         if (it.isFolder) {
-          _apiDebug('FOLDER idx=${base + i} guid=${it.guid} title=${it.title} type=${it.type}');
+          _apiDebug('FOLDER page=$page idx=${base + i} guid=${it.guid} '
+              'title=${it.title} type=${it.type}');
         }
       }
-      final total = (resp['data']['total'] ?? 0).toInt();
-      if (list.isEmpty || all.length >= total) break;
+
+      final total = _readTotal(resp['data']);
+      // 结束条件（按可靠性排序）：
+      // 1) 空页：确实取完了（total 不可信时靠它兜底，正是修复 50 条上限的关键）
+      // 2) 整页重复：服务端没有真正翻页，继续请求只会拿到同样的数据
+      // 3) total 可信且已取满
+      if (list.isEmpty) break;
+      if (added == 0) break;
+      if (total > 0 && all.length >= total) break;
       page++;
     }
+    _apiDebug('fetchItemPageBatch done guid=$guid useParent=$useParent '
+        'pages=$page items=${all.length}');
     return all;
+  }
+
+  /// 安全读取服务端 total：可能是 int / String / null，
+  /// 取不到时返回 -1（表示不可信，改由「空页」判定结束）。
+  static int _readTotal(dynamic data) {
+    final t = data is Map ? data['total'] : null;
+    if (t is int) return t;
+    if (t is num) return t.toInt();
+    if (t is String) return int.tryParse(t) ?? -1;
+    return -1;
   }
 
   Future<Map<String, dynamic>> getEpisodeList(String id) async {
