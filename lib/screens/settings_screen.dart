@@ -440,6 +440,16 @@ class _PlayerSettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Card(
+            child: SwitchListTile(
+              title: const Text('倒车/摄像头覆盖时自动暂停'),
+              subtitle: const Text('挂 R 挡或 360 环视画面接管车机屏幕时暂停，解除覆盖后自动续播'),
+              value: app.pauseOnCover,
+              activeColor: FnTheme.danmuGreen,
+              onChanged: (v) => app.pauseOnCover = v,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
             child: Column(
               children: [
                 ListTile(

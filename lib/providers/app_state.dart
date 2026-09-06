@@ -470,6 +470,10 @@ class AppState extends ChangeNotifier {
   bool get showNetworkSpeed => _prefs.getBool('show_network_speed') ?? false;
   set showNetworkSpeed(bool v) { _prefs.setBool('show_network_speed', v); notifyListeners(); }
 
+  /// 倒车/360 环视画面覆盖车机屏幕时自动暂停播放，解除覆盖后自动续播。
+  bool get pauseOnCover => _prefs.getBool('pause_on_cover') ?? true;
+  set pauseOnCover(bool v) { _prefs.setBool('pause_on_cover', v); notifyListeners(); }
+
   bool get debugLogEnabled => _prefs.getBool('debug_log_enabled') ?? false;
   set debugLogEnabled(bool v) {
     _prefs.setBool('debug_log_enabled', v);

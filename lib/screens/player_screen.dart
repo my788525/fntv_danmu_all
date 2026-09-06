@@ -12,6 +12,7 @@ import '../models/danmu_comment.dart';
 import '../models/subtitle_data.dart';
 import '../models/mpv_player_settings.dart';
 import '../models/watch_record.dart';
+import '../services/car_cover_detector.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../utils/theme.dart';
@@ -133,6 +134,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _playlistIndex = 0;
   // 连播保护：每次自然结束后只触发一次续播（防原生 completed 与轮询重复触发）
   bool _advanceGuard = false;
+  // 倒车/摄像头覆盖触发的自动暂停标记（用户手动暂停时清除，解除覆盖后不自动续播）
+  bool _autoPausedByCover = false;
 
   // Danmu
   List<DanmuComment> _danmuItems = [];
@@ -196,9 +199,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } catch (_) {}
     WakelockPlus.enable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    // 车机适配：不强制横屏，继承系统当前方向（nosensor 已由 Manifest 保证不随重力变化）。
+    // 车机适配：不强制横屏，完全跟随系统当前方向（Manifest 已移除 screenOrientation 锁定）。
+    // 倒车/360 环视覆盖检测：挂 R 挡或 App 被系统画面覆盖时自动暂停，解除后自动续播。
+    CarCoverDetector.instance.init();
+    CarCoverDetector.instance.covered.addListener(_onCoverChanged);
+    // 若打开播放器时正处于覆盖状态（如挂 R 挡中打开），异步同步一次
+    CarCoverDetector.instance.isCoveredNow().then((c) {
+      if (c && CarCoverDetector.instance.covered.value != c) {
+        CarCoverDetector.instance.covered.value = c;
+      }
+    });
     _loadPlayInfo();
     _resetHideTimer();
+  }
+
+  /// 覆盖状态变化：暂停/续播状态机。
+  /// - covered=true：正在播放则暂停，并记录「自动暂停」标记；
+  /// - covered=false：若此前是自动暂停且用户未手动干预，则自动续播；
+  ///   用户覆盖期间手动暂停过（_autoPausedByCover 已被 _togglePlay 清除）则不续播。
+  void _onCoverChanged() {
+    if (!mounted || _videoCtrl == null) return;
+    if (!_app.pauseOnCover) return;
+    final coveredNow = CarCoverDetector.instance.covered.value;
+    if (coveredNow) {
+      if (_videoCtrl!.isPlaying) {
+        _videoCtrl!.pause();
+        _autoPausedByCover = true;
+        _flashCoverHint('倒车画面已接管，已自动暂停');
+      }
+    } else {
+      if (_autoPausedByCover && !_videoCtrl!.isPlaying) {
+        _videoCtrl!.play();
+      }
+      _autoPausedByCover = false;
+    }
+  }
+
+  /// 顶部提示条文字 + 自动隐藏定时器。
+  String? _coverHint;
+  Timer? _coverHintTimer;
+  void _flashCoverHint(String msg) {
+    if (!mounted) return;
+    setState(() => _coverHint = msg);
+    _coverHintTimer?.cancel();
+    _coverHintTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _coverHint = null);
+    });
   }
 
   // Cached AppState reference (safe to use in dispose)
@@ -915,6 +961,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_videoCtrl == null) return;
     if (_isPlaying) {
       _videoCtrl!.pause();
+      // 用户手动暂停：清除覆盖自动暂停标记，解除覆盖后不要自动续播
+      _autoPausedByCover = false;
     } else {
       _videoCtrl!.play();
     }
@@ -1143,6 +1191,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    CarCoverDetector.instance.covered.removeListener(_onCoverChanged);
+    _coverHintTimer?.cancel();
     _hideTimer?.cancel();
     _gestureOverlayTimer?.cancel();
     _progressTimer?.cancel();
@@ -1393,6 +1443,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 danmuComments: _danmuItems,
                 showNetworkSpeed: _app.showNetworkSpeed,
                 networkSpeedBps: _networkSpeedBps,
+              ),
+
+            // 倒车/摄像头覆盖自动暂停提示条（3 秒后自动隐藏）
+            if (_coverHint != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: MediaQuery.of(context).padding.top + 8,
+                child: IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: FnTheme.danmuGreen, width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.videocam_off_rounded,
+                              color: FnTheme.danmuGreen, size: 16),
+                          const SizedBox(width: 6),
+                          Text(_coverHint!,
+                            style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
 
             // Lock button — 屏幕右侧中间，上锁后点击屏幕呼出，用于解锁
