@@ -175,6 +175,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onSteeringKey);
     _appState = context.read<AppState>(); // Cache before dispose
     _danmuService = DanmuService(api: _appState!.api, appState: _appState!);
     _itemTitle = widget.title;
@@ -526,6 +527,58 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     setState(() => _isInitialized = false);
     _initVideo(_lastPlaybackUrl);
+  }
+
+  /// 车机方向盘按键 → 上/下集切换。
+  /// DiLink 等车机方向盘上下键通常以媒体键（KEYCODE_MEDIA_PREVIOUS 87 /
+  /// KEYCODE_MEDIA_NEXT 88）或 DPAD（19/20）送达，两者都映射：
+  /// 上一集 ← mediaTrackPrevious / 方向上；下一集 → mediaTrackNext / 方向下。
+  /// 仅在播放页生命周期内注册（initState/dispose），不影响其他页面的按键行为。
+  bool _onSteeringKey(KeyEvent event) {
+    // 只响应按下瞬间；长按连发（KeyRepeatEvent）忽略，避免一口气跳过好几集
+    if (event is! KeyDownEvent) return false;
+    final key = event.logicalKey;
+    int? delta;
+    if (key == LogicalKeyboardKey.mediaTrackPrevious ||
+        key == LogicalKeyboardKey.arrowUp) {
+      delta = -1;
+    } else if (key == LogicalKeyboardKey.mediaTrackNext ||
+        key == LogicalKeyboardKey.arrowDown) {
+      delta = 1;
+    }
+    if (delta == null) return false;
+    _gotoRelativeEpisode(delta);
+    return true;
+  }
+
+  /// 按 delta（-1 上一集 / +1 下一集）切换，兼容文件夹播放列表与剧集两种模式。
+  void _gotoRelativeEpisode(int delta) {
+    final bool isPlaylistMode = _playlist != null && _playlist!.isNotEmpty;
+    final List<PlayListItem>? effEpList =
+        isPlaylistMode ? _playlist : _episodeList;
+    if (effEpList == null || effEpList.isEmpty) {
+      FnToast.show(context, '当前无播放列表', type: FnToastType.info);
+      return;
+    }
+    final int cur = isPlaylistMode ? _playlistIndex : _currentEpIndex;
+    final int target = cur + delta;
+    if (target < 0 || target >= effEpList.length) {
+      FnToast.show(context, delta < 0 ? '已经是第一集' : '已经是最后一集',
+          type: FnToastType.info);
+      return;
+    }
+    final title = effEpList[target].title;
+    final label =
+        (title == null || title.isEmpty) ? '第 ${target + 1} 项' : title;
+    if (isPlaylistMode) {
+      _playPlaylistItem(target);
+    } else {
+      _playEpisode(target, resumeFromServer: true);
+    }
+    if (mounted) {
+      FnToast.show(context, delta < 0 ? '上一集：$label' : '下一集：$label',
+          type: FnToastType.info);
+    }
   }
 
   Future<void> _selectSubtitleTrack(int index) async {
@@ -1220,6 +1273,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onSteeringKey);
     CarCoverDetector.instance.covered.removeListener(_onCoverChanged);
     _coverHintTimer?.cancel();
     _hideTimer?.cancel();
