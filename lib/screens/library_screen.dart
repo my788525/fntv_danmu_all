@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_state.dart';
 import '../models/media_item.dart';
 import '../models/play_list_item.dart';
+import '../models/watch_record.dart';
 import '../utils/theme.dart';
+import '../widgets/continue_watching_card.dart';
 import 'player_screen.dart';
 import 'series_screen.dart';
 
@@ -52,6 +55,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _loadLibraries() async {
     setState(() => _loadingLibs = true);
+    // 原「首页」的继续观看记录由媒体库承载：进入即拉取服务端播放记录
+    unawaited(_app.fetchServerPlayList());
     try {
       final resp = await _app.api.getMediaDbList();
       if (resp['code'] == 0 && resp['data'] != null) {
@@ -249,12 +254,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildLibraryList() {
-    if (_loadingLibs) {
+    final app = context.watch<AppState>();
+    final history = app.watchHistory.where((r) => !r.isNearlyFinished).toList();
+    if (_loadingLibs && _libraries.isEmpty) {
       return const Center(child: CircularProgressIndicator(color: FnTheme.danmuGreen));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 原「首页」的继续观看，移至媒体库顶部
+        if (history.isNotEmpty) _buildContinueWatching(history, app),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Text('媒体库',
@@ -269,7 +278,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         Expanded(
           child: RefreshIndicator(
-            onRefresh: _loadLibraries,
+            onRefresh: () async {
+              await _loadLibraries();
+              await _app.fetchServerPlayList();
+            },
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _libraries.length,
@@ -321,6 +333,65 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
       ],
     );
+  }
+
+  /// 继续观看：横向滚动卡片列表（源自服务端播放记录）。
+  Widget _buildContinueWatching(List<WatchRecord> history, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.play_circle_outline, color: FnTheme.danmuGreen, size: 20),
+              const SizedBox(width: 6),
+              const Text('继续观看',
+                style: TextStyle(
+                  color: FnTheme.danmuGreen,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                )),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 152,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: history.length,
+            itemBuilder: (_, i) => ContinueWatchingCard(
+              record: history[i],
+              imageUrl: app.api.getImageUrl(history[i].poster),
+              onTap: () => _onWatchRecordTap(history[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 点击继续观看卡片：跳转到对应条目并续播。
+  Future<void> _onWatchRecordTap(WatchRecord record) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          itemGuid: record.guid,
+          title: record.title,
+          tvTitle: record.tvTitle ?? '',
+          episodeNumber: record.episodeNumber,
+          poster: record.poster ?? '',
+          category: record.libraryName ?? '',
+          seekTs: record.ts,
+          duration: record.duration,
+          parentGuid: record.parentGuid,
+        ),
+      ),
+    );
+    // 返回后刷新继续观看列表（进度/已看完可能变化）
+    if (mounted) _app.fetchServerPlayList();
   }
 
   Widget _buildBrowseView() {

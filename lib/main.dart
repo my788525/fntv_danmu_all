@@ -4,7 +4,6 @@ import 'package:media_kit/media_kit.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/account_select_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/settings_screen.dart';
 import 'utils/theme.dart';
@@ -136,7 +135,6 @@ class _MainShellState extends State<MainShell> {
     }
 
     final pages = [
-      HomeScreen(key: ValueKey('home_$sessionVersion')),
       LibraryScreen(key: ValueKey('library_$sessionVersion')),
       const SettingsScreen(),
     ];
@@ -161,9 +159,8 @@ class _MainShellState extends State<MainShell> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, '首页'),
-                _buildNavItem(1, Icons.video_library_rounded, Icons.video_library_outlined, '媒体库'),
-                _buildNavItem(2, Icons.settings_rounded, Icons.settings_outlined, '设置'),
+                _buildNavItem(0, Icons.video_library_rounded, Icons.video_library_outlined, '媒体库'),
+                _buildNavItem(1, Icons.settings_rounded, Icons.settings_outlined, '设置'),
               ],
             ),
           ),
