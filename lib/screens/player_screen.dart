@@ -1183,6 +1183,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final seekStep = _app.seekStep;
+    // 选集 / 上一下一：文件夹播放列表优先，其次剧集选集（两者互斥：
+    // 文件夹模式 _loadEpisodes 不会被调用，_episodeList 恒为 null）
+    final bool isPlaylistMode = _playlist != null && _playlist!.isNotEmpty;
+    final List<PlayListItem>? effEpList =
+        isPlaylistMode ? _playlist : _episodeList;
+    final int effCurIdx = isPlaylistMode ? _playlistIndex : _currentEpIndex;
+    final void Function(int) effOnSelect = isPlaylistMode
+        ? (int i) => _playPlaylistItem(i)
+        : (int i) => _playEpisode(i, resumeFromServer: true);
+    final bool effHasPrev = effCurIdx > 0;
+    final bool effHasNext = effEpList != null &&
+        effCurIdx >= 0 &&
+        effCurIdx < effEpList.length - 1;
+    final VoidCallback? effOnPrev = effHasPrev
+        ? (isPlaylistMode
+            ? () => _playPlaylistItem(effCurIdx - 1)
+            : () => _playEpisode(effCurIdx - 1))
+        : null;
+    final VoidCallback? effOnNext = effHasNext
+        ? (isPlaylistMode
+            ? () => _playPlaylistItem(effCurIdx + 1)
+            : () => _playEpisode(effCurIdx + 1))
+        : null;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -1292,8 +1315,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 speed: _speed,
                 position: _videoCtrl?.position ?? Duration.zero,
                 duration: _videoCtrl?.duration ?? Duration.zero,
-                episodeList: _episodeList,
-                currentEpIndex: _currentEpIndex,
+                episodeList: effEpList,
+                currentEpIndex: effCurIdx,
                 danmuOn: _danmuOn,
                 qualityCount: _qualityCount,
                 qualityLabels: _qualityLabels,
@@ -1314,7 +1337,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   _app.danmuOn = v;
                 }),
                 onBack: _exitPlayer,
-                onEpisode: (i) => _playEpisode(i, resumeFromServer: true),
+                onEpisode: effOnSelect,
                 onQuality: (idx) {
                   final pos = _videoCtrl?.position.inSeconds ?? 0;
                   setState(() {
@@ -1363,18 +1386,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 playbackInfo: _playbackInfoLabel,
                 aspectMode: _aspectMode,
                 onAspectMode: _setAspectMode,
-                hasPrevEpisode: _currentEpIndex > 0,
-                hasNextEpisode: _episodeList != null &&
-                    _currentEpIndex >= 0 &&
-                    _currentEpIndex < _episodeList!.length - 1,
-                onPrevEpisode: _currentEpIndex > 0
-                    ? () => _playEpisode(_currentEpIndex - 1)
-                    : null,
-                onNextEpisode: (_episodeList != null &&
-                        _currentEpIndex >= 0 &&
-                        _currentEpIndex < _episodeList!.length - 1)
-                    ? () => _playEpisode(_currentEpIndex + 1)
-                    : null,
+                hasPrevEpisode: effHasPrev,
+                hasNextEpisode: effHasNext,
+                onPrevEpisode: effOnPrev,
+                onNextEpisode: effOnNext,
                 danmuComments: _danmuItems,
                 showNetworkSpeed: _app.showNetworkSpeed,
                 networkSpeedBps: _networkSpeedBps,
