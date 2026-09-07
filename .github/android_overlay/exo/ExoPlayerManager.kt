@@ -2,7 +2,6 @@ package com.fntv.fnos_tv_all
 
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -11,9 +10,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.DefaultAudioProcessorChain
-import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.LoudnessEnhancer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -32,17 +28,10 @@ object ExoPlayerManager {
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
         val builder = ExoPlayer.Builder(appContext)
             .setMediaSourceFactory(mediaSourceFactory)
-        // 音量均衡：Android 10+ 用系统 LoudnessEnhancer 做响度归一化（多波段限幅 + 提升感知响度）。
-        // 注意：车机为 Android 9，该 API 不可用，此时自动跳过（AV 走 MPV 内核的 dynaudnorm 兜底）。
-        if (volumeNormalize && Build.VERSION.SDK_INT >= 29) {
-            try {
-                val audioSink = DefaultAudioSink.Builder(appContext).build()
-                val chain = DefaultAudioProcessorChain(audioSink, LoudnessEnhancer(0))
-                builder.setAudioProcessorChain(chain)
-            } catch (_: Exception) {
-                // LoudnessEnhancer 不可用（如厂商 ROM 未提供）时退回默认音频链路
-            }
-        }
+        // 音量均衡（响度归一化）：
+        // 车机为 Android 9，系统 LoudnessEnhancer 需 API 29+，Exo 内核无法在此生效；
+        // 实际跨视频统一响度由 MPV 内核的 dynaudnorm 滤镜完成（AV 默认走 MPV 内核）。
+        // 参数 volumeNormalize 已透传并持久化，切换内核时统一生效。
         val player = builder.build()
         players[playerId] = player
     }

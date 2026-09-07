@@ -467,7 +467,7 @@ class _PlayerSettingsPage extends StatelessWidget {
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 SwitchListTile(
                   title: const Text('音量均衡'),
-                  subtitle: const Text('跨视频自动统一响度，避免忽大忽小。MPV 内核全平台生效；Exo 内核需 Android 10+'),
+                  subtitle: const Text('跨视频自动统一响度，避免忽大忽小。MPV 内核全平台生效（车机默认内核）；Exo 内核暂未接入'),
                   value: app.volumeNormalize,
                   activeColor: FnTheme.danmuGreen,
                   onChanged: (v) => app.volumeNormalize = v,

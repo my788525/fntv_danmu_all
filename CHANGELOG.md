@@ -95,7 +95,7 @@
 - **双击屏幕暂停 / 继续**：双击视频区任意位置即暂停或继续播放（不再分区）；左右快进/快退改用横向拖拽手势，避免与双击暂停冲突。原「双击左/右」设置项已移除。
 - **音量均衡（跨视频统一响度）**：解决「上一部很小声、下一部突然很大」的音量跳变问题。
   - MPV 内核（车机默认，Android 9 全平台生效）：注入 `dynaudnorm` 动态响度归一化滤镜，实时把不同片源音量拉到一致听感。
-  - ExoPlayer 内核：Android 10+ 用系统 `LoudnessEnhancer` 做响度归一化；**车机为 Android 9，该 API 不可用，自动跳过**（此时切到 MPV 内核即可生效）。
+  - ExoPlayer 内核：当前依赖集（media3 1.4.1）未暴露 `LoudnessEnhancer` / `DefaultAudioProcessorChain`，且车机为 Android 9（系统 `LoudnessEnhancer` 需 API 29+），故 Exo 内核暂不接入响度归一化；如需该能力，在播放界面切换内核到 MPV 即可生效。
   - 设置页新增开关「音量均衡」（默认开）。
 
 ---
