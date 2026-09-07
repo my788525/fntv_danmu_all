@@ -22,7 +22,7 @@ class ContinueWatchingCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 200,
+        width: 160,
         margin: const EdgeInsets.only(right: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

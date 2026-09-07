@@ -282,13 +282,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
               await _loadLibraries();
               await _app.fetchServerPlayList();
             },
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 3.4,
+              ),
               itemCount: _libraries.length,
               itemBuilder: (_, i) {
                 final lib = _libraries[i];
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
+                  margin: EdgeInsets.zero,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => _openLibrary(lib),
@@ -312,6 +318,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(lib.title,
                                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
@@ -356,7 +363,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
         SizedBox(
-          height: 152,
+          height: 114,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),

@@ -349,6 +349,24 @@ class PlayerControls extends StatelessWidget {
                     ],
                   ),
                 ),
+                // 返回上一页按钮：位于底部控制栏左侧、播放/暂停键下方，
+                // 随整个控制层（_showControls）一同显隐。
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: onBack,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: FnTheme.danmuGreen.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_rounded,
+                            color: Colors.white, size: 24),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
