@@ -432,20 +432,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 双击左侧：seek=快退 / pause=暂停
-  String get doubleTapLeft => _prefs.getString('double_tap_left') ?? 'seek';
-  set doubleTapLeft(String v) {
-    _prefs.setString('double_tap_left', v == 'pause' ? 'pause' : 'seek');
-    notifyListeners();
-  }
-
-  /// 双击右侧：seek=快进 / pause=暂停
-  String get doubleTapRight => _prefs.getString('double_tap_right') ?? 'seek';
-  set doubleTapRight(String v) {
-    _prefs.setString('double_tap_right', v == 'pause' ? 'pause' : 'seek');
-    notifyListeners();
-  }
-
   int get mpvBufferMb => _prefs.getInt('mpv_buffer_mb') ?? 192;
   set mpvBufferMb(int v) { _prefs.setInt('mpv_buffer_mb', v.clamp(50, 512)); notifyListeners(); }
 
@@ -473,6 +459,11 @@ class AppState extends ChangeNotifier {
   /// 倒车/360 环视画面覆盖车机屏幕时自动暂停播放，解除覆盖后自动续播。
   bool get pauseOnCover => _prefs.getBool('pause_on_cover') ?? true;
   set pauseOnCover(bool v) { _prefs.setBool('pause_on_cover', v); notifyListeners(); }
+
+  /// 音量均衡：跨视频自动统一响度，避免「上一部很小声、下一部突然很大」。
+  /// MPV 内核用 dynaudnorm 滤镜（全 Android 版本生效）；Exo 内核在 Android 10+ 用系统 LoudnessEnhancer。
+  bool get volumeNormalize => _prefs.getBool('volume_normalize') ?? true;
+  set volumeNormalize(bool v) { _prefs.setBool('volume_normalize', v); notifyListeners(); }
 
   bool get debugLogEnabled => _prefs.getBool('debug_log_enabled') ?? false;
   set debugLogEnabled(bool v) {

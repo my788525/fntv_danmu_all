@@ -32,7 +32,8 @@ class ExoPlayerPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activity
             when (call.method) {
                 "create" -> {
                     val playerId = call.argument<Int>("playerId") ?: 0
-                    ExoPlayerManager.create(context, playerId)
+                    val volumeNormalize = call.argument<Boolean>("volumeNormalize") ?: true
+                    ExoPlayerManager.create(context, playerId, volumeNormalize)
                     result.success(null)
                 }
                 "setSource" -> {

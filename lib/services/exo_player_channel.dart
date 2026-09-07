@@ -9,9 +9,12 @@ class ExoPlayerChannel {
 
   static int allocateId() => _nextId++;
 
-  static Future<void> create(int playerId) async {
+  static Future<void> create(int playerId, [bool volumeNormalize = true]) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-    await _method.invokeMethod('create', {'playerId': playerId});
+    await _method.invokeMethod('create', {
+      'playerId': playerId,
+      'volumeNormalize': volumeNormalize,
+    });
   }
 
   static Future<void> setSource({

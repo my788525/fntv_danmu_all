@@ -424,6 +424,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       url: url,
       headers: _app!.api.mediaHeaders(url),
       mpvSettings: _mpvSettingsForPlayback(),
+      volumeNormalize: _app!.volumeNormalize,
     );
     // 接住底层「播放自然结束」事件，用于自动连播（比轮询 position>=duration 可靠）
     _videoCtrl!.onCompleted = _onPlaybackComplete;
@@ -1175,27 +1176,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _onPlayerTap,
-        onDoubleTapDown: (details) {
+        onDoubleTapDown: (_) {
+          // 双击屏幕任意位置：暂停 / 继续播放（不再分区）。
+          // 左右快进/快退改用横向拖拽手势，避免与双击暂停冲突。
           if (_isLocked) return;
-          final w = MediaQuery.of(context).size.width;
-          final dx = details.globalPosition.dx;
-          final leftAction = _app.doubleTapLeft;
-          final rightAction = _app.doubleTapRight;
-          if (dx < w / 3) {
-            if (leftAction == 'pause') {
-              _togglePlay();
-            } else {
-              _seek(Duration(seconds: -seekStep));
-            }
-          } else if (dx > w * 2 / 3) {
-            if (rightAction == 'pause') {
-              _togglePlay();
-            } else {
-              _seek(Duration(seconds: seekStep));
-            }
-          } else {
-            _togglePlay();
-          }
+          _togglePlay();
         },
         onVerticalDragStart: (details) {
           if (_isLocked) return;

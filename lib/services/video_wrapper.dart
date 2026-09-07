@@ -20,6 +20,7 @@ class VideoWrapper extends AppVideoPlayer {
   final String url;
   final Map<String, String>? headers;
   final MpvPlayerSettings settings;
+  final bool volumeNormalize;
 
   Player? _mpvPlayer;
   VideoController? _mpvVideoController;
@@ -51,6 +52,7 @@ class VideoWrapper extends AppVideoPlayer {
     required this.url,
     this.headers,
     MpvPlayerSettings? settings,
+    this.volumeNormalize = true,
   }) : settings = settings ?? const MpvPlayerSettings();
 
   @override
@@ -233,6 +235,12 @@ class VideoWrapper extends AppVideoPlayer {
       'sub-delay': '0',
       'sub-ass-override': 'no',
     };
+
+    // 音量均衡：MPV 用 dynaudnorm 动态响度归一化，跨视频统一响度，避免「上一部很小声、下一部突然很大」。
+    // f=分析窗(ms) g=最大增益(dB) p=目标峰值 m=历史(s) s=场景切换检测。
+    if (volumeNormalize) {
+      props['af'] = 'dynaudnorm=f=250:g=20:p=0.95:m=10:s=0';
+    }
 
     // PGS/ASS 内嵌字幕需混入视频帧，由 MPV 原生 surface 渲染（非 Flutter 文本层）
     if (hwdec != 'no') {

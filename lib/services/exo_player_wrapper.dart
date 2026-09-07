@@ -12,6 +12,7 @@ import 'player_adapter.dart';
 class ExoPlayerWrapper extends AppVideoPlayer {
   final String url;
   final Map<String, String>? headers;
+  final bool volumeNormalize;
 
   final int _playerId = ExoPlayerChannel.allocateId();
 
@@ -36,7 +37,7 @@ class ExoPlayerWrapper extends AppVideoPlayer {
   @override
   final ValueNotifier<int> networkSpeedBps = ValueNotifier(0);
 
-  ExoPlayerWrapper({required this.url, this.headers});
+  ExoPlayerWrapper({required this.url, this.headers, this.volumeNormalize = true});
 
   @override
   PlayerCoreType get coreType => PlayerCoreType.exo;
@@ -114,7 +115,7 @@ class ExoPlayerWrapper extends AppVideoPlayer {
     if (!isSupported) throw UnsupportedError('ExoPlayer only on Android');
     _completedFired = false;
     _playbackRate = initialSpeed.clamp(0.25, 4.0);
-    await ExoPlayerChannel.create(_playerId);
+    await ExoPlayerChannel.create(_playerId, volumeNormalize);
     _startPolling();
     final startMs = (!deferSeek && startAt != null && startAt > Duration.zero)
         ? startAt.inMilliseconds

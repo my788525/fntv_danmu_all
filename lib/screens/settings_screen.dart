@@ -459,24 +459,19 @@ class _PlayerSettingsPage extends StatelessWidget {
                   onTap: () => _showSeekStepPicker(context, app),
                 ),
                 ListTile(
-                  title: const Text('双击左侧'),
-                  subtitle: Text(app.doubleTapLeft == 'pause' ? '暂停/播放' : '快退'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _showDoubleTapPicker(context, app, isLeft: true),
-                ),
-                ListTile(
-                  title: const Text('双击右侧'),
-                  subtitle: Text(app.doubleTapRight == 'pause' ? '暂停/播放' : '快进'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _showDoubleTapPicker(context, app, isLeft: false),
-                ),
-                ListTile(
                   title: const Text('长按倍速'),
                   subtitle: Text('${app.danmuLongPressSpeed}x'),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _showLongPressSpeedPicker(context, app),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: const Text('音量均衡'),
+                  subtitle: const Text('跨视频自动统一响度，避免忽大忽小。MPV 内核全平台生效；Exo 内核需 Android 10+'),
+                  value: app.volumeNormalize,
+                  activeColor: FnTheme.danmuGreen,
+                  onChanged: (v) => app.volumeNormalize = v,
+                ),
                 SwitchListTile(
                   title: const Text('网速指示器'),
                   subtitle: const Text('呼出进度条时显示当前网速与系统时间'),
@@ -631,42 +626,6 @@ class _PlayerSettingsPage extends StatelessWidget {
     ));
   }
 
-  void _showDoubleTapPicker(BuildContext ctx, AppState app, {required bool isLeft}) {
-    final current = isLeft ? app.doubleTapLeft : app.doubleTapRight;
-    showDialog(context: ctx, builder: (_) => SimpleDialog(
-      title: Text(isLeft ? '双击左侧' : '双击右侧'),
-      children: [
-        RadioListTile<String>(
-          value: 'seek',
-          groupValue: current,
-          title: Text(isLeft ? '快退' : '快进'),
-          onChanged: (v) {
-            if (v == null) return;
-            if (isLeft) {
-              app.doubleTapLeft = v;
-            } else {
-              app.doubleTapRight = v;
-            }
-            Navigator.pop(ctx);
-          },
-        ),
-        RadioListTile<String>(
-          value: 'pause',
-          groupValue: current,
-          title: const Text('暂停/播放'),
-          onChanged: (v) {
-            if (v == null) return;
-            if (isLeft) {
-              app.doubleTapLeft = v;
-            } else {
-              app.doubleTapRight = v;
-            }
-            Navigator.pop(ctx);
-          },
-        ),
-      ],
-    ));
-  }
 }
 
 // ────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ package com.fntv.fnos_tv_all
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -10,6 +11,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.DefaultAudioProcessorChain
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.LoudnessEnhancer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -17,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 object ExoPlayerManager {
     private val players = ConcurrentHashMap<Int, ExoPlayer>()
 
-    fun create(context: Context, playerId: Int) {
+    fun create(context: Context, playerId: Int, volumeNormalize: Boolean = true) {
         dispose(playerId)
         val appContext = context.applicationContext
         val httpFactory = DefaultHttpDataSource.Factory()
@@ -26,9 +30,20 @@ object ExoPlayerManager {
             .setReadTimeoutMs(30_000)
         val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-        val player = ExoPlayer.Builder(appContext)
+        val builder = ExoPlayer.Builder(appContext)
             .setMediaSourceFactory(mediaSourceFactory)
-            .build()
+        // 音量均衡：Android 10+ 用系统 LoudnessEnhancer 做响度归一化（多波段限幅 + 提升感知响度）。
+        // 注意：车机为 Android 9，该 API 不可用，此时自动跳过（AV 走 MPV 内核的 dynaudnorm 兜底）。
+        if (volumeNormalize && Build.VERSION.SDK_INT >= 29) {
+            try {
+                val audioSink = DefaultAudioSink.Builder(appContext).build()
+                val chain = DefaultAudioProcessorChain(audioSink, LoudnessEnhancer(0))
+                builder.setAudioProcessorChain(chain)
+            } catch (_: Exception) {
+                // LoudnessEnhancer 不可用（如厂商 ROM 未提供）时退回默认音频链路
+            }
+        }
+        val player = builder.build()
         players[playerId] = player
     }
 

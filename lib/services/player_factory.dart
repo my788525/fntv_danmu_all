@@ -53,10 +53,11 @@ class PlayerFactory {
     required String url,
     Map<String, String>? headers,
     MpvPlayerSettings? mpvSettings,
+    bool volumeNormalize = true,
   }) {
     if (core == PlayerCoreType.exo && ExoPlayerWrapper.isSupported) {
-      return ExoPlayerWrapper(url: url, headers: headers);
+      return ExoPlayerWrapper(url: url, headers: headers, volumeNormalize: volumeNormalize);
     }
-    return VideoWrapper(url: url, headers: headers, settings: mpvSettings);
+    return VideoWrapper(url: url, headers: headers, settings: mpvSettings, volumeNormalize: volumeNormalize);
   }
 }
